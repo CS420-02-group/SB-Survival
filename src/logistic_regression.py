@@ -43,6 +43,7 @@ weights = np.zeros(X.shape[1])
 
 # Sigmoid
 def sigmoid(z):
+    z = np.array(z, dtype=float)  # ensure z is a NumPy array
     return 1 / (1 + np.exp(-z))
 
 # Train

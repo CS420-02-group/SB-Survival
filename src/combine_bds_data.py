@@ -1,8 +1,9 @@
 import pandas as pd
 import os
 
-# Set directory paths
-data_dir = os.path.join("..", "data")
+script_dir = os.path.dirname(os.path.abspath(__file__))  # path to src/
+data_dir = os.path.join(script_dir, "..", "data")
+
 output_dir = os.path.join("..", "processed")
 os.makedirs(output_dir, exist_ok=True)
 
