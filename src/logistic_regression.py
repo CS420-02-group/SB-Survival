@@ -4,71 +4,93 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve, auc
+import os
 
-# Load dataset
-df = pd.read_csv("../processed/filtered_bds_data.csv")
 
-# Binary label: 1 for births, 0 for deaths
-df["label"] = df["dataclass_name"].apply(lambda x: 1 if x == "Establishment Births" else 0)
+# Load the pre-processed dataset
+df = pd.read_csv("../processed/aggregated_bds_data.csv")
 
-#Drop rows with missing things
-df = df.replace("-", np.nan)
-df = df.dropna(subset=["year", "value", "industry_name", "sizeclass_name"])
+# Binary label: survival_rate > 0.5 means more births than deaths → label = 1
+df["label"] = (df["survival_rate"] > 0.5).astype(int)
 
-# Convert numeric fields
-df["year"] = pd.to_numeric(df["year"], errors="coerce")
-df["value"] = pd.to_numeric(df["value"], errors="coerce")
+# Drop any missing values
+df = df.dropna()
 
-# Drop remaining NaNs
-df = df.dropna(subset=["year", "value"])
+# One-hot encode industry and period
+df = pd.get_dummies(df, columns=["industry_name", "period"], drop_first=True)
 
-# One-hot encode industry and size class
-df = pd.get_dummies(df, columns=["industry_name", "sizeclass_name"], drop_first=True)
-
-# Select features
-feature_cols = ["year", "value"] + [col for col in df.columns if col.startswith("industry_name_") or col.startswith("sizeclass_name_")]
-X = df[feature_cols].values.astype(float)
+# Feature columns
+feature_cols = ["year", "net_jobs", "survival_rate"] + [col for col in df.columns if col.startswith("industry_name_") or col.startswith("period_")]
+X = df[feature_cols].astype(float).values
 y = df["label"].values
 
-# Normalize year and value
+# Normalize numerical columns
 year_idx = feature_cols.index("year")
-value_idx = feature_cols.index("value")
-X[:, [year_idx, value_idx]] = (X[:, [year_idx, value_idx]] - X[:, [year_idx, value_idx]].mean(axis=0)) / X[:, [year_idx, value_idx]].std(axis=0)
+net_jobs_idx = feature_cols.index("net_jobs")
+survival_rate_idx = feature_cols.index("survival_rate")
+X[:, [year_idx, net_jobs_idx, survival_rate_idx]] = (X[:, [year_idx, net_jobs_idx, survival_rate_idx]] - X[:, [year_idx, net_jobs_idx, survival_rate_idx]].mean(axis=0)) / X[:, [year_idx, net_jobs_idx, survival_rate_idx]].std(axis=0)
 
-# Add bias
+# Add bias column
 X = np.hstack([np.ones((X.shape[0], 1)), X])
 
-# Initialize weights
-weights = np.zeros(X.shape[1])
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Sigmoid
+# Initialize weights
+weights = np.zeros(X_train.shape[1])
+
+# Sigmoid function
 def sigmoid(z):
-    z = np.array(z, dtype=float)  # ensure z is a NumPy array
     return 1 / (1 + np.exp(-z))
 
-# Train
+# Training with gradient descent
 lr = 0.1
 epochs = 1000
 for _ in range(epochs):
-    z = np.dot(X, weights)
+    z = np.dot(X_train, weights)
     preds = sigmoid(z)
-    error = y - preds
-    gradient = np.dot(X.T, error) / len(y)
+    error = y_train - preds
+    gradient = np.dot(X_train.T, error) / len(y_train)
     weights += lr * gradient
 
-# Results
-print("Trained weights:", weights)
-pred_probs = sigmoid(np.dot(X, weights))
-pred_labels = (pred_probs >= 0.5).astype(int)
-accuracy = np.mean(pred_labels == y)
-print("Accuracy:", accuracy)
+output_dir = os.path.join("..", "outputs", "plots")
+os.makedirs(output_dir, exist_ok=True)
 
-# Visualization (year only)
-plt.scatter(X[:, 1], y, label="True", alpha=0.5)
-plt.scatter(X[:, 1], pred_probs, label="Predicted", alpha=0.5)
-plt.xlabel("Normalized Year")
-plt.ylabel("Probability of Survival")
-plt.title("Logistic Regression with Feature Engineering")
-plt.legend()
+# Evaluate on test set
+z_test = np.dot(X_test, weights)
+test_probs = sigmoid(z_test)
+test_preds = (test_probs >= 0.5).astype(int)
+accuracy = np.mean(test_preds == y_test)
+print("Test Accuracy:", accuracy)
+
+# ROC Curve and AUC
+fpr, tpr, thresholds = roc_curve(y_test, test_probs)
+roc_auc = auc(fpr, tpr)
+
+plt.figure()
+plt.plot(fpr, tpr, label=f"ROC Curve (AUC = {roc_auc:.2f})")
+plt.plot([0, 1], [0, 1], linestyle="--", color="gray")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("Receiver Operating Characteristic (ROC)")
+plt.legend(loc="lower right")
 plt.grid(True)
+plot_path = os.path.join(output_dir, "roc_curve.png")
+plt.savefig(plot_path)
+print("ROC curve saved to:", os.path.abspath(plot_path))
 plt.show()
+
+from sklearn.metrics import confusion_matrix, classification_report
+# Print confusion matrix
+cm = confusion_matrix(y_test, test_preds)
+print("\nConfusion Matrix:")
+print(cm)
+
+# Classification report (precision, recall, F1, support)
+print("\nClassification Report:")
+print(classification_report(y_test, test_preds, digits=3))
+
+# Also print AUC score
+print(f"\nAUC Score: {roc_auc:.4f}")

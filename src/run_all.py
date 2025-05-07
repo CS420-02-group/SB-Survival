@@ -52,7 +52,7 @@ def main():
             # step 4: model training and evaluation
             run_script("src/decision_tree.py", "decision tree model")
             run_script("src/linear_regression.py", "linear regression model")
-            #run_script("src/logistic_regression.py", "logistic regression model")
+            run_script("src/logistic_regression.py", "logistic regression model")
             
             # step 5: model comparison
             #run_script("src/evaluation.py", "model evaluation and comparison")
